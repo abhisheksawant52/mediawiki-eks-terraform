@@ -1,5 +1,5 @@
 resource "helm_release" "mariadb" {
-  name      = "database"
+  name      = "mindhacker-database"  # updated name
   namespace = kubernetes_namespace.mediawiki.metadata[0].name
   chart     = "./mediawiki-mariadb-chart"
 
@@ -19,7 +19,7 @@ resource "helm_release" "mariadb" {
         type = "ClusterIP"
         port = 3306
       }
-      fullnameOverride = "database"
+      fullnameOverride = "mindhacker-database"
     })
   ]
 

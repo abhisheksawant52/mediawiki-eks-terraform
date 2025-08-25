@@ -18,11 +18,32 @@ output "cluster_ca" {
 }
 
 ##############################################
+# EKS Node Group Output
+##############################################
+output "node_group_name" {
+  description = "Name of the EKS node group"
+  value       = aws_eks_node_group.default.node_group_name
+}
+
+##############################################
 # Kubernetes Namespace
 ##############################################
 output "mediawiki_namespace" {
   description = "Kubernetes namespace for MediaWiki"
   value       = kubernetes_namespace.mediawiki.metadata[0].name
+}
+
+##############################################
+# Helm Release Outputs (optional)
+##############################################
+output "mariadb_release_name" {
+  description = "Helm release name for MariaDB"
+  value       = helm_release.mariadb.name
+}
+
+output "mediawiki_release_name" {
+  description = "Helm release name for MediaWiki"
+  value       = helm_release.mediawiki.name
 }
 
 ##############################################
@@ -36,6 +57,7 @@ aws eks update-kubeconfig --region ${var.region} --name ${aws_eks_cluster.this.n
 kubectl get svc -n ${kubernetes_namespace.mediawiki.metadata[0].name}
 EOT
 }
+
 
 ##############################################
 # Jump Box (Optional)

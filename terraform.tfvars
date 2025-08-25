@@ -1,23 +1,23 @@
 ##############################################
 # Cluster & Region
 ##############################################
-region            = "us-east-1"
-cluster_name      = "test-cluster"
-cluster_version   = "1.27"
+region          = "us-east-1"
+cluster_name    = "Abhishek-cluster"   # matches main.tf
+cluster_version = "1.27"
 
 ##############################################
 # Node Group
 ##############################################
-node_desired_size = 1
-node_max_size     = 1
-node_min_size     = 1
+node_desired_size  = 1
+node_max_size      = 1
+node_min_size      = 1
 node_instance_types = ["t3.micro"]
 
 ##############################################
-# Public Subnet & AZs
+# Public Subnets & AZs
 ##############################################
-public_subnets = ["10.0.1.0/24"]
-azs            = ["us-east-1a"]
+public_subnets = ["10.0.1.0/24", "10.0.2.0/24"]  # two subnets for EKS requirement
+azs            = ["us-east-1a", "us-east-1b"]
 
 ##############################################
 # MariaDB / MediaWiki
@@ -30,10 +30,10 @@ db_password      = "change-me-user"
 ##############################################
 # Jump Box
 ##############################################
-ssh_key_name = "my-aws-key"               # your existing AWS EC2 key pair
-my_ip_cidr   = "203.0.113.25/32"         # replace with your actual public IP
+ssh_key_name     = "Mindhacker"               # your existing AWS EC2 key pair
+my_ip_cidr       = "203.0.113.25/32"         # replace with your actual public IP
 
 ##############################################
 # Optional
 ##############################################
-deploy_jump_box = true
+deploy_jump_box  = true
