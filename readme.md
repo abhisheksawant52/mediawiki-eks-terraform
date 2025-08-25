@@ -1,190 +1,131 @@
-# MediaWiki on AWS EKS with Terraform
+# Abhishek EKS Terraform Deployment
 
-This project deploys a production-ready **MediaWiki** setup on **AWS EKS** using **Terraform** and **Helm**, including a jump box for secure access.
-
----
-
-## Features
-
-* VPC with **two public subnets** (`us-east-1a` / `us-east-1b`)
-* **EKS v1.28** cluster with managed node group
-* IAM role grants `system:masters` to your current identity (kubectl works immediately)
-* Kubernetes and Helm providers configured (IAM exec auth)
-* Installs local Helm charts:
-
-  * `./mediawiki-mariadb-chart`
-  * `./mediawiki-chart`
-* Optional **jump box** for secure cluster access
+This project automates the deployment of an **AWS EKS Cluster** with a **Jump Box** using Terraform, fully configured with Docker, kubectl, Helm, and a local user `Abhishek` for direct access.
 
 ---
 
-## Project Structure
+## Architecture Overview
 
-```
-.
-├─ main.tf
-├─ providers.tf
-├─ versions.tf
-├─ variables.tf
-├─ values-mediawiki-mariadb.yaml
-├─ values-mediawiki.yaml
-├─ outputs.tf
-├─ mediawiki-mariadb-chart/   (your Helm chart)
-└─ mediawiki-chart/           (your Helm chart)
-```
+* **VPC:** 10.0.0.0/16
+* **Subnets:** 2 Public Subnets across Availability Zones
+* **Internet Gateway & Route Table** for public access
+* **EKS Cluster:** Version 1.30
+* **Node Group:** Managed, configurable instance type, desired/min/max nodes
+* **Jump Box EC2:** t3.medium with Docker, kubectl, Helm, and local user `Abhishek`
+* **Security Groups:** Allow SSH access to Jump Box
+
+---
+
+## Terraform Files
+
+* `providers.tf`: AWS provider configuration
+* `variables.tf`: All input variables with defaults
+* `main.tf`: Resources for VPC, subnets, EKS cluster, node group, Jump Box
+* `outputs.tf`: Outputs for cluster endpoint, certificate, and Jump Box IP
 
 ---
 
 ## Prerequisites
 
-* Terraform v1.5+
-* AWS CLI configured
-* SSH key pair in AWS (`ssh_key_name`)
-* Local Helm charts for MediaWiki and MariaDB
+* Terraform >= 1.5
+* AWS CLI configured with appropriate IAM permissions
+* SSH Key (name provided in `variables.tf` as `abhishek-key`)
+* AWS account with sufficient quota for EKS and EC2
 
 ---
 
-## Deploying
+## How to Deploy
 
-1. Initialize Terraform:
+1. Clone the repository:
+
+```bash
+git clone <repo-url>
+cd <repo-directory>
+```
+
+2. Initialize Terraform:
 
 ```bash
 terraform init
 ```
 
-2. Apply the configuration:
+3. Review plan:
 
 ```bash
-terraform apply -auto-approve
+terraform plan
 ```
 
-3. (Optional) Save kubeconfig locally:
+4. Apply deployment:
 
 ```bash
-aws eks update-kubeconfig --region us-east-1 --name mediawiki-eks
+terraform apply
+```
+
+Terraform will create all resources. Confirm with `yes` when prompted.
+
+---
+
+## Accessing the Jump Box
+
+After deployment, retrieve the public IP from Terraform outputs:
+
+```bash
+terraform output jump_box_public_ip
+```
+
+SSH into the Jump Box:
+
+```bash
+ssh -i abhishek-key.pem ec2-user@<jump_box_public_ip>
+```
+
+Switch to local user `Abhishek`:
+
+```bash
+sudo su - Abhishek
+```
+
+---
+
+## Verify Tools
+
+Check installed tools:
+
+```bash
 kubectl get nodes
-kubectl get svc -n mediawiki
+helm version
+docker ps
 ```
+
+The kubeconfig is already configured for both `ec2-user` and `Abhishek`.
 
 ---
 
-## Accessing MediaWiki
+## Variables
 
-### 1️⃣ Get External IP
-
-```bash
-kubectl get svc -n mediawiki
-```
-
-* `mediawiki` service type should be `LoadBalancer`
-* Open a browser at: `http://<EXTERNAL-IP>`
-
-If `EXTERNAL-IP` is `<pending>`, wait a few minutes.
-
----
-
-### 2️⃣ Persist `LocalSettings.php`
-
-**Option A: ConfigMap (simple)**
-
-```bash
-kubectl -n mediawiki create configmap localsettings --from-file=LocalSettings.php
-```
-
-Patch Deployment to mount the ConfigMap:
-
-```yaml
-volumeMounts:
-  - name: localsettings
-    mountPath: /var/www/html/LocalSettings.php
-    subPath: LocalSettings.php
-volumes:
-  - name: localsettings
-    configMap:
-      name: localsettings
-      items:
-        - key: LocalSettings.php
-          path: LocalSettings.php
-```
-
-Re-deploy the chart:
-
-```bash
-helm upgrade mediawiki ./mediawiki-chart -n mediawiki -f values-mediawiki.yaml
-```
-
-**Option B: PVC/EFS (advanced)**
-
-* Use a PersistentVolume so the file survives upgrades.
-
----
-
-## Jump Box Deployment
-
-### 1️⃣ Connect to Jump Box
-
-```bash
-ssh -i ~/.ssh/<your-key>.pem ec2-user@<jump_box_public_ip>
-```
-
-### 2️⃣ Install kubectl and AWS CLI
-
-```bash
-sudo yum install -y awscli
-curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-chmod +x kubectl
-sudo mv kubectl /usr/local/bin/
-```
-
-### 3️⃣ Configure kubeconfig
-
-```bash
-aws eks --region <your-region> update-kubeconfig --name <cluster_name>
-kubectl get nodes
-```
-
----
-
-## Accessing MediaWiki via Jump Box
-
-**Option A: LoadBalancer**
-
-* Use EXTERNAL-IP in browser: `http://<EXTERNAL-IP>`
-
-**Option B: ClusterIP (internal)**
-
-1. Port-forward:
-
-```bash
-kubectl port-forward svc/mediawiki 8080:80 -n mediawiki
-```
-
-2. SSH tunnel from local machine:
-
-```bash
-ssh -i ~/.ssh/<your-key>.pem -L 8080:localhost:8080 ec2-user@<jump_box_public_ip>
-```
-
-* Open browser at `http://localhost:8080`
-
----
-
-## Database Access (Optional)
-
-MariaDB is `ClusterIP`:
-
-```bash
-kubectl port-forward svc/database 3306:3306 -n mediawiki
-```
-
-* Connect locally using `127.0.0.1:3306`
+* `aws_region`: AWS region (default `us-east-1`)
+* `ssh_key_name`: SSH key for EC2 Jump Box
+* `node_instance_type`: EKS worker node type (default `t3.medium`)
+* `node_desired_capacity`: Desired nodes (default 2)
+* `node_min_capacity`: Minimum nodes (default 1)
+* `node_max_capacity`: Maximum nodes (default 3)
 
 ---
 
 ## Outputs
 
-* Jump box public IP
-* EKS cluster info (nodes, services)
+* `cluster_endpoint`: EKS API endpoint
+* `cluster_certificate_authority_data`: Base64 encoded CA
+* `jump_box_public_ip`: Public IP of Jump Box
+
+---
+
+## Notes
+
+* The user `Abhishek` is created with password `Abhishek` and sudo access.
+* Docker, kubectl, and Helm are installed automatically on the Jump Box.
+* Kubeconfig is auto-configured for both `ec2-user` and `Abhishek`.
+* Adjust Terraform variables if needed for region, SSH key, or node sizing.
 
 ---
 
@@ -193,18 +134,13 @@ kubectl port-forward svc/database 3306:3306 -n mediawiki
 To destroy all resources:
 
 ```bash
-terraform destroy -auto-approve
+terraform destroy
 ```
 
----
-
-## Notes
-
-* Make sure your Helm charts are configured correctly before deployment.
-* LoadBalancer provisioning may take a few minutes.
-* Consider using PersistentVolumes for MediaWiki data in production.
-* This setup is minimal for testing; adjust node size and subnets for production.
+Confirm with `yes` when prompted.
 
 ---
 
-**Enjoy your MediaWiki on EKS!**
+## Support
+
+For any issues, check AWS IAM permissions, VPC limits, and EKS quotas.

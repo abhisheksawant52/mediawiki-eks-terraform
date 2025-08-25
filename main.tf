@@ -1,63 +1,54 @@
-##############################################
-# VPC (Minimal)
-##############################################
-resource "aws_vpc" "this" {
+# Availability zones
+data "aws_availability_zones" "available" {}
+
+# VPC
+resource "aws_vpc" "abhishek_vpc" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
   enable_dns_support   = true
 
-  tags = { Name = "Mindhacker-vpc" }
+  tags = { Name = "Abhishek-VPC" }
 }
 
-resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.this.id
-  tags   = { Name = "Mindhacker-igw" }
-}
-
-resource "aws_subnet" "public_1" {
-  cidr_block              = "10.0.1.0/24"
-  vpc_id                  = aws_vpc.this.id
-  availability_zone       = "us-east-1a"
+# Public subnets
+resource "aws_subnet" "abhishek_subnets" {
+  count                   = 2
+  vpc_id                  = aws_vpc.abhishek_vpc.id
+  cidr_block              = cidrsubnet(aws_vpc.abhishek_vpc.cidr_block, 4, count.index)
+  availability_zone       = data.aws_availability_zones.available.names[count.index]
   map_public_ip_on_launch = true
 
-  tags = { Name = "Mindhacker-public-1" }
+  tags = { Name = "Abhishek-Subnet-${count.index}" }
 }
 
-resource "aws_subnet" "public_2" {
-  cidr_block              = "10.0.2.0/24"
-  vpc_id                  = aws_vpc.this.id
-  availability_zone       = "us-east-1b"
-  map_public_ip_on_launch = true
-
-  tags = { Name = "Mindhacker-public-2" }
+# Internet Gateway
+resource "aws_internet_gateway" "abhishek_igw" {
+  vpc_id = aws_vpc.abhishek_vpc.id
+  tags   = { Name = "Abhishek-IGW" }
 }
 
-resource "aws_route_table" "public_rt" {
-  vpc_id = aws_vpc.this.id
+# Route Table
+resource "aws_route_table" "abhishek_route" {
+  vpc_id = aws_vpc.abhishek_vpc.id
 
   route {
     cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
+    gateway_id = aws_internet_gateway.abhishek_igw.id
   }
 
-  tags = { Name = "Mindhacker-public-rt" }
+  tags = { Name = "Abhishek-Route" }
 }
 
-resource "aws_route_table_association" "public_assoc_1" {
-  subnet_id      = aws_subnet.public_1.id
-  route_table_id = aws_route_table.public_rt.id
+# Route Table Associations
+resource "aws_route_table_association" "abhishek_rta" {
+  count          = 2
+  subnet_id      = aws_subnet.abhishek_subnets[count.index].id
+  route_table_id = aws_route_table.abhishek_route.id
 }
 
-resource "aws_route_table_association" "public_assoc_2" {
-  subnet_id      = aws_subnet.public_2.id
-  route_table_id = aws_route_table.public_rt.id
-}
-
-##############################################
-# IAM Roles for EKS
-##############################################
+# IAM Roles for EKS Cluster and Node Group
 resource "aws_iam_role" "eks_cluster_role" {
-  name = "Abhishek-eks-cluster-role"
+  name = "Abhishek-EKS-Cluster-Role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -70,129 +61,93 @@ resource "aws_iam_role" "eks_cluster_role" {
 }
 
 resource "aws_iam_role_policy_attachment" "eks_cluster_policy" {
-  role       = aws_iam_role.eks_cluster_role.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
+  role       = aws_iam_role.eks_cluster_role.name
+}
+
+resource "aws_iam_role_policy_attachment" "eks_vpc_controller" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSVPCResourceController"
+  role       = aws_iam_role.eks_cluster_role.name
 }
 
 resource "aws_iam_role" "eks_node_role" {
-  name = "Abhishek-eks-node-role"
+  name = "Abhishek-EKS-Node-Role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Action    = "sts:AssumeRole"
       Effect    = "Allow"
       Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
     }]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "node_AmazonEKSWorkerNodePolicy" {
-  role       = aws_iam_role.eks_node_role.name
+resource "aws_iam_role_policy_attachment" "eks_node_worker_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"
+  role       = aws_iam_role.eks_node_role.name
 }
 
-resource "aws_iam_role_policy_attachment" "node_AmazonEC2ContainerRegistryReadOnly" {
-  role       = aws_iam_role.eks_node_role.name
+resource "aws_iam_role_policy_attachment" "eks_node_registry_policy" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-}
-
-resource "aws_iam_role_policy_attachment" "node_AmazonEKS_CNI_Policy" {
   role       = aws_iam_role.eks_node_role.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
 }
 
-##############################################
-# EKS Cluster (Minimal)
-##############################################
-resource "aws_eks_cluster" "this" {
+resource "aws_iam_role_policy_attachment" "eks_node_cni_policy" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+  role       = aws_iam_role.eks_node_role.name
+}
+
+# EKS Cluster
+resource "aws_eks_cluster" "abhishek" {
   name     = "Abhishek-cluster"
   role_arn = aws_iam_role.eks_cluster_role.arn
-  version  = "1.27"
+  version  = "1.30"
 
   vpc_config {
-    subnet_ids = [
-      aws_subnet.public_1.id,
-      aws_subnet.public_2.id
-    ]
+    subnet_ids = aws_subnet.abhishek_subnets[*].id
   }
 
-  depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy]
+  tags = { Name = "Abhishek" }
+
+  depends_on = [aws_iam_role_policy_attachment.eks_cluster_policy, aws_iam_role_policy_attachment.eks_vpc_controller]
 }
 
-##############################################
-# EKS Node Group (1 small node)
-##############################################
-resource "aws_eks_node_group" "default" {
-  cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "Abhishek-default"
+# EKS Node Group
+resource "aws_eks_node_group" "abhishek_nodes" {
+  cluster_name    = aws_eks_cluster.abhishek.name
+  node_group_name = "Abhishek-nodes"
   node_role_arn   = aws_iam_role.eks_node_role.arn
-  subnet_ids      = [aws_subnet.public_1.id] # Nodes in one subnet
+  subnet_ids      = aws_subnet.abhishek_subnets[*].id
 
   scaling_config {
-    desired_size = 1
-    max_size     = 1
-    min_size     = 1
+    desired_size = var.node_desired_capacity
+    min_size     = var.node_min_capacity
+    max_size     = var.node_max_capacity
   }
 
-  instance_types = ["t3.micro"]
+  instance_types = [var.node_instance_type]
 
-  depends_on = [
-    aws_eks_cluster.this,
-    aws_iam_role_policy_attachment.node_AmazonEKSWorkerNodePolicy,
-    aws_iam_role_policy_attachment.node_AmazonEC2ContainerRegistryReadOnly,
-    aws_iam_role_policy_attachment.node_AmazonEKS_CNI_Policy
-  ]
-}
-
-##############################################
-# Kubernetes namespace
-##############################################
-resource "kubernetes_namespace" "mediawiki" {
-  metadata {
-    name = "mindhacker-mediawiki"
+  remote_access {
+    ec2_ssh_key = var.ssh_key_name
   }
+
+  tags = { Name = "Abhishek" }
+
+  depends_on = [aws_eks_cluster.abhishek]
 }
 
-##############################################
-# Helm: MariaDB (minimal)
-##############################################
-resource "helm_release" "mariadb" {
-  name      = "mindhacker-database"
-  namespace = kubernetes_namespace.mediawiki.metadata[0].name
-  chart     = "./mediawiki-mariadb-chart"
-  values    = [file("${path.module}/values-mediawiki-mariadb.yaml")]
-
-  depends_on = [aws_eks_node_group.default]
-}
-
-##############################################
-# Helm: MediaWiki
-##############################################
-resource "helm_release" "mediawiki" {
-  name      = "mindhacker-mediawiki"
-  namespace = kubernetes_namespace.mediawiki.metadata[0].name
-  chart     = "./mediawiki-chart"
-  values    = [file("${path.module}/values-mediawiki.yaml")]
-
-  depends_on = [helm_release.mariadb]
-}
-
-##############################################
-# Jump Box / Bastion Host (Optional)
-##############################################
-resource "aws_security_group" "jump_sg" {
-  count       = var.deploy_jump_box ? 1 : 0
-  name        = "mindhacker-jump-sg"
-  description = "Security group for the jump box"
-  vpc_id      = aws_vpc.this.id
+# Security group for Jump Box
+resource "aws_security_group" "abhishek_jump" {
+  name        = "Abhishek-jump-sg"
+  description = "Allow SSH and HTTP"
+  vpc_id      = aws_vpc.abhishek_vpc.id
 
   ingress {
-    description = "SSH from my IP"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.my_ip_cidr]  # your public IP
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
@@ -201,19 +156,49 @@ resource "aws_security_group" "jump_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
-  tags = { Name = "mindhacker-jump-sg" }
 }
 
-resource "aws_instance" "jump_box" {
-  count                  = var.deploy_jump_box ? 1 : 0
-  ami                    = var.jump_ami
+# Jump Box EC2 with kubectl, Helm, Docker, and Abhishek user
+resource "aws_instance" "abhishek_jump" {
+  ami                    = "ami-0c02fb55956c7d316"
   instance_type          = "t3.micro"
-  subnet_id              = aws_subnet.public_1.id
-  vpc_security_group_ids = [aws_security_group.jump_sg[0].id]
   key_name               = var.ssh_key_name
+  subnet_id              = aws_subnet.abhishek_subnets[0].id
+  security_groups        = [aws_security_group.abhishek_jump.id]
+  associate_public_ip_address = true
 
-  tags = {
-    Name = "mindhacker-jump"
-  }
+  tags = { Name = "Abhishek-JumpBox" }
+
+  user_data = <<EOF
+#!/bin/bash
+yum update -y
+amazon-linux-extras enable docker
+yum install -y docker git unzip curl jq sudo
+systemctl enable docker
+systemctl start docker
+
+# Install kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+# Install Helm
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+# Create user Abhishek
+useradd Abhishek
+echo "Abhishek:Abhishek" | chpasswd
+usermod -aG wheel Abhishek
+
+# Setup kubeconfig for ec2-user
+mkdir -p /home/ec2-user/.kube
+aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.abhishek.name} --kubeconfig /home/ec2-user/.kube/config
+chown ec2-user:ec2-user /home/ec2-user/.kube/config
+chmod 600 /home/ec2-user/.kube/config
+
+# Setup kubeconfig for Abhishek user
+mkdir -p /home/Abhishek/.kube
+aws eks update-kubeconfig --region ${var.aws_region} --name ${aws_eks_cluster.abhishek.name} --kubeconfig /home/Abhishek/.kube/config
+chown Abhishek:Abhishek /home/Abhishek/.kube/config
+chmod 600 /home/Abhishek/.kube/config
+EOF
 }
